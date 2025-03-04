@@ -269,8 +269,13 @@ bot.action('version_info', async (ctx) => {
 // Quando l'utente scrive un nome di una carta
 bot.on('text', (ctx) => {
     const cardName = ctx.message.text;
+
+    // Se l'utente sta scrivendo un comando, ignoriamo la ricerca delle carte
+    if (cardName.startsWith('/')) return;
+
     searchCard(ctx, cardName);
 });
+
 
 // Gestione degli errori
 bot.catch((err, ctx) => {
@@ -321,3 +326,4 @@ bot.command('clearall', async (ctx) => {
         console.error('Errore nel comando /clearall:', error);
     }
 });
+
