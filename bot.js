@@ -90,8 +90,8 @@ async function showCardVersion(ctx, userId, printingIndex, messageId = null) {
     
     // Bottoni per i prezzi - Utilizziamo l'URL di ricerca di Cardmarket
     // Questo dovrebbe funzionare in modo più affidabile
-    const cardMarketUrl = `https://www.cardmarket.com/it/Magic/Products/Search?searchString=${encodeURIComponent(card.name)}`;
-    const cardTraderUrl = `https://www.cardtrader.com/search?q=${encodeURIComponent(card.name)}`;
+    const cardMarketUrl = `tg://openmessage?url=https://www.cardmarket.com/it/Magic/Products/Search?searchString=${encodeURIComponent(card.name)}`;
+    const cardTraderUrl = `tg://openmessage?url=https://www.cardtrader.com/search?q=${encodeURIComponent(card.name)}`;
     inlineKeyboard.push([
         { text: '💰 Cardmarket', url: cardMarketUrl },
         { text: '💰 CardTrader', url: cardTraderUrl }
@@ -332,5 +332,10 @@ bot.command('clearall', async (ctx) => {
         console.error('Errore nel comando /clearall:', error);
     }
 });
+
+setInterval(() => {
+    console.log("✅ Keep-alive: Il bot è ancora attivo!");
+}, 5 * 60 * 1000); // Ogni 5 minuti
+
 
 
