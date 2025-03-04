@@ -45,7 +45,8 @@ async function searchCard(ctx, cardName) {
             userCardData[userId] = {
                 card: card,
                 allPrintings: allPrintings,
-                currentPrintingIndex: 0
+                currentPrintingIndex: 0,
+                messageId: null // Memorizzeremo l'ID del messaggio per aggiornarlo
             };
             
             // Mostriamo la prima versione della carta
@@ -74,7 +75,8 @@ async function searchCard(ctx, cardName) {
             userCardData[userId] = {
                 card: translationResponse.data.data[0],
                 allPrintings: allPrintings,
-                currentPrintingIndex: 0
+                currentPrintingIndex: 0,
+                messageId: null // Memorizzeremo l'ID del messaggio per aggiornarlo
             };
             
             // Mostriamo la prima versione della carta
@@ -92,7 +94,7 @@ async function searchCard(ctx, cardName) {
 }
 
 // Funzione per mostrare una specifica versione della carta
-async function showCardVersion(ctx, userId, printingIndex) {
+async function showCardVersion(ctx, userId, printingIndex, messageId = null) {
     try {
         const userData = userCardData[userId];
         if (!userData || !userData.allPrintings || userData.allPrintings.length === 0) {
@@ -141,7 +143,7 @@ async function showCardVersion(ctx, userId, printingIndex) {
         }
         
         // Bottoni per i prezzi
-        const cardMarketUrl = `https://www.cardmarket.com/it/Magic/Cards/${encodeURIComponent(card.name)}`;
+        const cardMarketUrl = `https://www.cardmarket.com/it/Magic/Products/Search?searchString=${encodeURIComponent(card.name)}`;
         const cardTraderUrl = `https://www.cardtrader.com/search?q=${encodeURIComponent(card.name)}`;
         inlineKeyboard.push([
             { text: '💰 Cardmarket', url: cardMarketUrl },
@@ -220,13 +222,42 @@ async function showCardVersion(ctx, userId, printingIndex) {
             return ctx.reply('❌ Immagine non disponibile per questa versione della carta.');
         }
         
-        // Inviamo l'immagine con i bottoni
-        await ctx.replyWithPhoto(imageUrl, {
+        // Se abbiamo un ID messaggio (cioè stiamo aggiornando una carta esistente)
+        if (messageId) {
+            try {
+                // Aggiorniamo il messaggio esistente con la nuova immagine
+                await ctx.telegram.editMessageMedia(
+                    ctx.chat.id,
+                    messageId,
+                    null,
+                    {
+                        type: 'photo',
+                        media: imageUrl,
+                        caption: fullCaption
+                    },
+                    {
+                        reply_markup: {
+                            inline_keyboard: inlineKeyboard
+                        }
+                    }
+                );
+                return;
+            } catch (error) {
+                console.error('Errore nell\'aggiornamento del messaggio:', error);
+                // Se l'aggiornamento fallisce, continua e invia un nuovo messaggio
+            }
+        }
+        
+        // Se non stiamo aggiornando o l'aggiornamento è fallito, inviamo un nuovo messaggio
+        const sentMessage = await ctx.replyWithPhoto(imageUrl, {
             caption: fullCaption,
             reply_markup: {
                 inline_keyboard: inlineKeyboard
             }
         });
+        
+        // Salviamo l'ID del messaggio per futuri aggiornamenti
+        userData.messageId = sentMessage.message_id;
     } catch (error) {
         console.error('Errore nel mostrare la carta:', error);
         ctx.reply('❌ Si è verificato un errore. Riprova più tardi.');
@@ -242,7 +273,7 @@ bot.action('prev_version', async (ctx) => {
             
             if (currentIndex > 0) {
                 await ctx.answerCbQuery('Caricamento versione precedente...');
-                await showCardVersion(ctx, userId, currentIndex - 1);
+                await showCardVersion(ctx, userId, currentIndex - 1, ctx.callbackQuery.message.message_id);
             } else {
                 await ctx.answerCbQuery('Questa è la prima versione!');
             }
@@ -265,7 +296,7 @@ bot.action('next_version', async (ctx) => {
             
             if (currentIndex < maxIndex) {
                 await ctx.answerCbQuery('Caricamento versione successiva...');
-                await showCardVersion(ctx, userId, currentIndex + 1);
+                await showCardVersion(ctx, userId, currentIndex + 1, ctx.callbackQuery.message.message_id);
             } else {
                 await ctx.answerCbQuery('Questa è l\'ultima versione!');
             }
