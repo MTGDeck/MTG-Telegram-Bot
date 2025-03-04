@@ -1,16 +1,34 @@
 const { Telegraf } = require('telegraf');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const express = require('express');
 
-const bot = new Telegraf('7867515051:AAHzLtdIUHJ-yqvsCBR6WnGxbzrdgqTFhrs');
+const bot = new Telegraf(process.env.BOT_TOKEN); // Usa il token dalla variabile d'ambiente
 
-// Archivio per memorizzare temporaneamente i dati delle carte per utente
-const userCardData = {};
+const app = express();
+app.use(express.json());
 
-// Comando /start
-bot.start((ctx) => {
-    ctx.reply('Benvenuto! Scrivi il nome di una carta di Magic e ti mostrerò la sua immagine, i formati giocabili, le varianti disponibili e i prezzi da Cardmarket e CardTrader.');
+// Endpoint Webhook per ricevere i messaggi da Telegram
+app.post(`/bot${process.env.BOT_TOKEN}`, (req, res) => {
+    bot.handleUpdate(req.body);
+    res.sendStatus(200);
 });
+
+// Avvia il server Express su Railway
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, async () => {
+    console.log(`🌍 Server Webhook avviato sulla porta ${PORT}`);
+
+    try {
+        const webhookUrl = `https://tuo-progetto.railway.app/bot${process.env.BOT_TOKEN}`;
+        await bot.telegram.setWebhook(webhookUrl);
+        console.log(`✅ Webhook impostato con successo: ${webhookUrl}`);
+    } catch (error) {
+        console.error("❌ Errore nell'impostazione del Webhook:", error);
+    }
+});
+
+// Non avviamo più il bot con bot.launch(), perché ora usa i Webhook!
 
 // Funzione per cercare la carta su Scryfall
 async function searchCard(ctx, cardName) {
