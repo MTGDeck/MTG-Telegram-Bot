@@ -31,61 +31,99 @@ async function searchCard(ctx, cardName) {
     try {
         console.log(`🔍 Cercando: "${cardName}"`);
         
-        // Prima proviamo con il nome esatto (supporta sia inglese che italiano)
+        let card = null;
+        let allPrintings = [];
+        
+        // Step 1: Prima proviamo con la ricerca diretta fuzzy (funziona per nomi inglesi e alcuni italiani)
         try {
+            console.log(`Provo ricerca diretta per: "${cardName}"`);
             const response = await axios.get(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}`);
-            const card = response.data;
+            card = response.data;
             
-            // Cerca tutte le versioni disponibili della carta
+            // Se la carta è stata trovata, cerchiamo tutte le sue stampe
             const printingsResponse = await axios.get(`https://api.scryfall.com/cards/search?q=!"${encodeURIComponent(card.name)}"&unique=prints`);
-            const allPrintings = printingsResponse.data.data;
+            allPrintings = printingsResponse.data.data;
             
+            console.log(`✅ Carta trovata direttamente: ${card.name}`);
+        } catch (error) {
+            console.log(`❌ Ricerca diretta fallita per: "${cardName}". Proverò altre strategie...`);
+        }
+        
+        // Step 2: Se la ricerca diretta fallisce, proviamo con la ricerca specifica in italiano
+        if (!card) {
+            try {
+                console.log(`Provo ricerca in italiano per: "${cardName}"`);
+                // Cerchiamo carte in italiano che corrispondono alla query
+                const italianSearchUrl = `https://api.scryfall.com/cards/search?q=lang:it "${encodeURIComponent(cardName)}"`;
+                console.log(`URL ricerca italiana: ${italianSearchUrl}`);
+                
+                const italianResponse = await axios.get(italianSearchUrl);
+                
+                if (italianResponse.data.data && italianResponse.data.data.length > 0) {
+                    // Prendiamo la prima carta trovata in italiano
+                    const italianCard = italianResponse.data.data[0];
+                    console.log(`✅ Trovata carta in italiano: ${italianCard.printed_name || italianCard.name}`);
+                    
+                    // Otteniamo il nome inglese della carta
+                    const englishName = italianCard.name; // Il campo 'name' contiene sempre il nome inglese
+                    console.log(`🔄 Nome inglese della carta: "${englishName}"`);
+                    
+                    // Ora cerchiamo tutte le versioni con il nome inglese
+                    const printingsResponse = await axios.get(`https://api.scryfall.com/cards/search?q=!"${encodeURIComponent(englishName)}"&unique=prints`);
+                    
+                    // Impostiamo i risultati
+                    card = italianCard;
+                    allPrintings = printingsResponse.data.data;
+                }
+            } catch (error) {
+                console.log(`❌ Ricerca in italiano fallita per: "${cardName}"`);
+                console.error(error.response?.data || error.message);
+            }
+        }
+        
+        // Step 3: Se ancora non abbiamo trovato nulla, proviamo una ricerca più generica
+        if (!card) {
+            try {
+                console.log(`Provo ricerca generica per: "${cardName}"`);
+                // Cerchiamo in modo più generico (può trovare carte simili)
+                const genericSearchUrl = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(cardName)}`;
+                console.log(`URL ricerca generica: ${genericSearchUrl}`);
+                
+                const genericResponse = await axios.get(genericSearchUrl);
+                
+                if (genericResponse.data.data && genericResponse.data.data.length > 0) {
+                    // Prendiamo la prima carta trovata
+                    card = genericResponse.data.data[0];
+                    console.log(`✅ Trovata carta con ricerca generica: ${card.name}`);
+                    
+                    // Cerchiamo tutte le versioni
+                    const printingsResponse = await axios.get(`https://api.scryfall.com/cards/search?q=!"${encodeURIComponent(card.name)}"&unique=prints`);
+                    allPrintings = printingsResponse.data.data;
+                }
+            } catch (error) {
+                console.log(`❌ Ricerca generica fallita per: "${cardName}"`);
+                console.error(error.response?.data || error.message);
+            }
+        }
+        
+        // Se abbiamo trovato la carta, mostriamola
+        if (card && allPrintings.length > 0) {
             // Salviamo i dati della carta per questo utente
             const userId = ctx.from.id;
             userCardData[userId] = {
                 card: card,
                 allPrintings: allPrintings,
                 currentPrintingIndex: 0,
-                messageId: null // Memorizzeremo l'ID del messaggio per aggiornarlo
+                messageId: null, // Memorizzeremo l'ID del messaggio per aggiornarlo
+                timestamp: Date.now() // Aggiungiamo timestamp per pulizia memoria
             };
             
             // Mostriamo la prima versione della carta
             await showCardVersion(ctx, userId, 0);
-            return;
-        } catch (error) {
-            console.log('Ricerca diretta fallita, proverò a cercare la versione italiana...');
+        } else {
+            // Se non abbiamo trovato nulla, informiamo l'utente
+            ctx.reply('❌ Carta non trovata. Prova a scrivere il nome corretto in italiano o inglese.');
         }
-        
-        // Se arriviamo qui, proviamo a cercare in base alla lingua italiana
-        const translationResponse = await axios.get(`https://api.scryfall.com/cards/search?q=lang:it "${encodeURIComponent(cardName)}"&include_multilingual=true`);
-        
-        if (translationResponse.data.data && translationResponse.data.data.length > 0) {
-            // Otteniamo il nome inglese dalla carta italiana
-            const italienCard = translationResponse.data.data[0];
-            const englishName = italienCard.printed_name ? italienCard.name : italienCard.name;
-            
-            console.log(`🔄 Trovata traduzione: "${cardName}" → "${englishName}"`);
-            
-            // Ora cerchiamo tutte le versioni con il nome inglese
-            const printingsResponse = await axios.get(`https://api.scryfall.com/cards/search?q=!"${encodeURIComponent(englishName)}"&unique=prints`);
-            const allPrintings = printingsResponse.data.data;
-            
-            // Salviamo i dati della carta per questo utente
-            const userId = ctx.from.id;
-            userCardData[userId] = {
-                card: translationResponse.data.data[0],
-                allPrintings: allPrintings,
-                currentPrintingIndex: 0,
-                messageId: null // Memorizzeremo l'ID del messaggio per aggiornarlo
-            };
-            
-            // Mostriamo la prima versione della carta
-            await showCardVersion(ctx, userId, 0);
-            return;
-        }
-        
-        // Se arriviamo qui, la carta non è stata trovata
-        ctx.reply('❌ Carta non trovata. Prova a scrivere il nome corretto in italiano o inglese.');
         
     } catch (error) {
         console.error('Errore nella ricerca della carta:', error);
@@ -258,6 +296,7 @@ async function showCardVersion(ctx, userId, printingIndex, messageId = null) {
         
         // Salviamo l'ID del messaggio per futuri aggiornamenti
         userData.messageId = sentMessage.message_id;
+        userData.timestamp = Date.now();
     } catch (error) {
         console.error('Errore nel mostrare la carta:', error);
         ctx.reply('❌ Si è verificato un errore. Riprova più tardi.');
