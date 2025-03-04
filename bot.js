@@ -5,6 +5,8 @@ const express = require('express');
 
 const bot = new Telegraf(process.env.BOT_TOKEN); // Usa il token dalla variabile d'ambiente
 
+const userCardData = {}; // Archivio per memorizzare temporaneamente i dati delle carte per utente
+
 const app = express();
 app.use(express.json());
 
