@@ -313,17 +313,24 @@ bot.command('clearall', async (ctx) => {
         const chatId = ctx.chat.id;
         const messageId = ctx.message.message_id;
 
-        for (let i = messageId; i > messageId - 10; i--) {
+        // Recuperiamo gli ultimi 10 messaggi
+        for (let i = 0; i < 10; i++) {
             try {
-                await ctx.telegram.deleteMessage(chatId, i);
+                await ctx.telegram.deleteMessage(chatId, messageId - i);
             } catch (err) {
-                console.error('Errore nella cancellazione:', err);
+                console.error(`Errore nella cancellazione del messaggio ${messageId - i}:`, err);
             }
         }
 
-        ctx.reply('🧹 Pulizia completata!', { reply_to_message_id: messageId });
+        // Conferma che la pulizia è completata
+        const confirmationMessage = await ctx.reply('🧹 Pulizia completata!');
+        setTimeout(() => {
+            ctx.deleteMessage(confirmationMessage.message_id);
+        }, 3000); // Cancella il messaggio di conferma dopo 3 secondi
+
     } catch (error) {
         console.error('Errore nel comando /clearall:', error);
     }
 });
+
 
