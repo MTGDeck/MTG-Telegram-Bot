@@ -302,3 +302,22 @@ bot.launch().then(() => {
 // Gestione della chiusura
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+bot.command('clearall', async (ctx) => {
+    try {
+        const chatId = ctx.chat.id;
+        const messageId = ctx.message.message_id;
+
+        for (let i = messageId; i > messageId - 10; i--) {
+            try {
+                await ctx.telegram.deleteMessage(chatId, i);
+            } catch (err) {
+                console.error('Errore nella cancellazione:', err);
+            }
+        }
+
+        ctx.reply('🧹 Pulizia completata!', { reply_to_message_id: messageId });
+    } catch (error) {
+        console.error('Errore nel comando /clearall:', error);
+    }
+});
