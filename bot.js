@@ -35,30 +35,44 @@ app.listen(PORT, async () => {
 // Funzione per cercare la carta su Scryfall
 async function searchCard(ctx, cardName) {
     try {
-        // Prima cerchiamo i dettagli base della carta
-        const response = await axios.get(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}`);
-        const card = response.data;
-        
-        // Ora cerchiamo tutte le versioni della carta
-        const printingsResponse = await axios.get(`https://api.scryfall.com/cards/search?q=!"${encodeURIComponent(card.name)}"&unique=prints`);
-        const allPrintings = printingsResponse.data.data;
-        
-        // Salviamo i dati della carta per questo utente
-        const userId = ctx.from.id;
-        userCardData[userId] = {
-            card: card,
-            allPrintings: allPrintings,
-            currentPrintingIndex: 0,
-            messageId: null // Memorizzeremo l'ID del messaggio per aggiornarlo
-        };
-        
-        // Mostriamo la prima versione della carta
-        await showCardVersion(ctx, userId, 0);
+        console.log(`🔍 Ricerca della carta: ${cardName}`);
+
+        // Primo tentativo: cerca direttamente il nome scritto dall'utente
+        let response = await axios.get(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}`);
+
+        // Se la carta viene trovata, prosegui normalmente
+        if (response.status === 200) {
+            return processCardResponse(ctx, response.data);
+        }
     } catch (error) {
-        console.error(error);
-        ctx.reply('❌ Carta non trovata. Prova a scrivere il nome corretto.');
+        console.log("❌ Carta non trovata con il nome originale, provo la traduzione...");
+    }
+
+    try {
+        // Se la carta non è stata trovata, proviamo a cercarla in italiano
+        const translationResponse = await axios.get(`https://api.scryfall.com/cards/search?q=lang:it ${encodeURIComponent(cardName)}`);
+        if (translationResponse.data.data.length > 0) {
+            const englishName = translationResponse.data.data[0].name;
+            console.log(`🔄 Traduzione trovata: ${cardName} → ${englishName}`);
+
+            // Riproviamo la ricerca con il nome inglese
+            const finalResponse = await axios.get(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(englishName)}`);
+            return processCardResponse(ctx, finalResponse.data);
+        }
+    } catch (error) {
+        console.log("❌ Nessuna traduzione trovata, la carta non esiste in italiano.");
+        ctx.reply("❌ Carta non trovata. Assicurati di scrivere il nome corretto.");
     }
 }
+
+// Funzione per gestire la risposta della carta trovata
+function processCardResponse(ctx, card) {
+    const cardInfo = `📜 Nome: ${card.name}\n📦 Set: ${card.set_name}\n🎨 Artista: ${card.artist}`;
+    const imageUrl = card.image_uris ? card.image_uris.normal : card.card_faces[0].image_uris.normal;
+
+    ctx.replyWithPhoto(imageUrl, { caption: cardInfo });
+}
+
 
 // Funzione per mostrare una specifica versione della carta
 async function showCardVersion(ctx, userId, printingIndex, messageId = null) {
