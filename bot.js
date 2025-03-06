@@ -1,11 +1,131 @@
 const { Telegraf } = require('telegraf');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
 // Token del bot da impostare come variabile d'ambiente BOT_TOKEN
 const bot = new Telegraf(process.env.BOT_TOKEN || '7867515051:AAHzLtdIUHJ-yqvsCBR6WnGxbzrdgqTFhrs');
 
 // Archivio per memorizzare temporaneamente i dati delle carte per utente
 const userCardData = {};
+
+// Configurazione statistiche
+const STATS_FILE = path.join(__dirname, 'bot_stats.json');
+let stats = {
+  totalSearches: 0,
+  uniqueUsers: {},
+  topSearches: {},
+  userSessions: {},
+  lastReset: new Date().toISOString()
+};
+
+// Carica statistiche esistenti se disponibili
+function loadStats() {
+  try {
+    if (fs.existsSync(STATS_FILE)) {
+      const data = fs.readFileSync(STATS_FILE, 'utf8');
+      stats = JSON.parse(data);
+      console.log('🔄 Statistiche caricate dal file');
+    } else {
+      saveStats(); // Crea il file se non esiste
+      console.log('🆕 Nuovo file di statistiche creato');
+    }
+  } catch (error) {
+    console.error('❌ Errore nel caricamento delle statistiche:', error);
+  }
+}
+
+// Salva le statistiche su file
+function saveStats() {
+  try {
+    fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2));
+  } catch (error) {
+    console.error('❌ Errore nel salvataggio delle statistiche:', error);
+  }
+}
+
+// Aggiorna le statistiche per una ricerca
+function trackSearch(userId, username, cardName) {
+  // Incrementa contatore totale
+  stats.totalSearches++;
+  
+  // Traccia utente unico
+  const today = new Date().toISOString().split('T')[0];
+  
+  // Inizializza dati utente se non esistono
+  if (!stats.uniqueUsers[userId]) {
+    stats.uniqueUsers[userId] = {
+      firstSeen: today,
+      lastSeen: today,
+      totalSearches: 0,
+      username: username || `user_${userId}`
+    };
+  }
+  
+  // Aggiorna dati utente
+  stats.uniqueUsers[userId].lastSeen = today;
+  stats.uniqueUsers[userId].totalSearches++;
+  if (username) {
+    stats.uniqueUsers[userId].username = username;
+  }
+  
+  // Traccia carta cercata
+  if (!stats.topSearches[cardName]) {
+    stats.topSearches[cardName] = 0;
+  }
+  stats.topSearches[cardName]++;
+  
+  // Sessione utente
+  if (!stats.userSessions[today]) {
+    stats.userSessions[today] = {};
+  }
+  stats.userSessions[today][userId] = true;
+  
+  // Salva le statistiche su file ogni 10 ricerche
+  if (stats.totalSearches % 10 === 0) {
+    saveStats();
+  }
+}
+
+// Ottieni statistiche formattate per la visualizzazione
+function getFormattedStats() {
+  // Calcola utenti unici totali
+  const totalUniqueUsers = Object.keys(stats.uniqueUsers).length;
+  
+  // Calcola utenti attivi negli ultimi 7 giorni
+  const last7Days = [];
+  for (let i = 0; i < 7; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    last7Days.push(date.toISOString().split('T')[0]);
+  }
+  
+  let activeUsers7d = 0;
+  const recentDays = Object.keys(stats.userSessions).filter(day => last7Days.includes(day));
+  const activeUserSet = new Set();
+  
+  recentDays.forEach(day => {
+    Object.keys(stats.userSessions[day] || {}).forEach(userId => {
+      activeUserSet.add(userId);
+    });
+  });
+  
+  activeUsers7d = activeUserSet.size;
+  
+  // Ordina le ricerche più popolari
+  const sortedSearches = Object.entries(stats.topSearches)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+  
+  // Formato il risultato
+  return {
+    totalSearches: stats.totalSearches,
+    uniqueUsers: totalUniqueUsers,
+    activeUsers7d: activeUsers7d,
+    topSearches: sortedSearches,
+    lastReset: stats.lastReset
+  };
+}
 
 // Comando /start
 bot.start((ctx) => {
@@ -24,6 +144,72 @@ bot.help((ctx) => {
         '/start - Inizia a usare il bot\n' +
         '/help - Mostra questo messaggio di aiuto'
     );
+});
+
+// Comando admin per vedere le statistiche
+bot.command('stats', async (ctx) => {
+  // Ottieni l'ID dell'utente
+  const userId = ctx.from.id;
+  
+  // Lista di admin autorizzati (il tuo ID Telegram)
+  const admins = [77417420]; // Sostituisci con il tuo ID Telegram
+  
+  // Verifica se l'utente è un admin
+  if (!admins.includes(userId)) {
+    return ctx.reply('❌ Non sei autorizzato ad utilizzare questo comando.');
+  }
+  
+  // Ottieni statistiche formattate
+  const formattedStats = getFormattedStats();
+  
+  // Crea messaggio di statistiche
+  let statsMessage = `📊 *Statistiche Bot MTG*\n\n`;
+  statsMessage += `• Totale ricerche: ${formattedStats.totalSearches}\n`;
+  statsMessage += `• Utenti unici: ${formattedStats.uniqueUsers}\n`;
+  statsMessage += `• Utenti attivi (7 giorni): ${formattedStats.activeUsers7d}\n\n`;
+  
+  statsMessage += `🔝 *Top 10 Carte Cercate*\n`;
+  formattedStats.topSearches.forEach((search, index) => {
+    statsMessage += `${index + 1}. "${search[0]}" - ${search[1]} ricerche\n`;
+  });
+  
+  statsMessage += `\n⏱️ Ultimo reset: ${formattedStats.lastReset}`;
+  
+  // Invia messaggio delle statistiche
+  ctx.reply(statsMessage, { parse_mode: 'Markdown' });
+});
+
+// Comando admin per resettare le statistiche
+bot.command('resetstats', async (ctx) => {
+  // Ottieni l'ID dell'utente
+  const userId = ctx.from.id;
+  
+  // Lista di admin autorizzati (il tuo ID Telegram)
+  const admins = [5347720595]; // Sostituisci con il tuo ID Telegram
+  
+  // Verifica se l'utente è un admin
+  if (!admins.includes(userId)) {
+    return ctx.reply('❌ Non sei autorizzato ad utilizzare questo comando.');
+  }
+  
+  // Backup delle statistiche attuali
+  const backupFile = path.join(__dirname, `bot_stats_backup_${new Date().toISOString().replace(/:/g, '-')}.json`);
+  fs.writeFileSync(backupFile, JSON.stringify(stats, null, 2));
+  
+  // Reset delle statistiche
+  stats = {
+    totalSearches: 0,
+    uniqueUsers: {},
+    topSearches: {},
+    userSessions: {},
+    lastReset: new Date().toISOString()
+  };
+  
+  // Salva le statistiche resettate
+  saveStats();
+  
+  // Conferma reset
+  ctx.reply('✅ Statistiche resettate con successo. È stato creato un backup delle statistiche precedenti.');
 });
 
 // Funzione per cercare la carta su Scryfall (supporta italiano e inglese)
@@ -365,6 +551,19 @@ bot.action('version_info', async (ctx) => {
     }
 });
 
+// Quando l'utente scrive un nome di una carta
+bot.on('text', (ctx) => {
+    const cardName = ctx.message.text;
+    const userId = ctx.from.id;
+    const username = ctx.from.username;
+    
+    // Traccia la ricerca nelle statistiche
+    trackSearch(userId, username, cardName);
+    
+    // Chiama la funzione di ricerca originale
+    searchCard(ctx, cardName);
+});
+
 // Pulizia della memoria ogni 12 ore per evitare perdite di memoria
 setInterval(() => {
     console.log('🧹 Pulizia della memoria...');
@@ -382,17 +581,20 @@ setInterval(() => {
     console.log(`✅ Pulizia completata. Utenti attivi: ${Object.keys(userCardData).length}`);
 }, 12 * 60 * 60 * 1000);
 
-// Quando l'utente scrive un nome di una carta
-bot.on('text', (ctx) => {
-    const cardName = ctx.message.text;
-    searchCard(ctx, cardName);
-});
+// Salva le statistiche periodicamente (ogni ora)
+setInterval(() => {
+    console.log('💾 Salvataggio periodico delle statistiche...');
+    saveStats();
+}, 60 * 60 * 1000);
 
 // Gestione degli errori globale
 bot.catch((err, ctx) => {
     console.error(`Errore per ${ctx.updateType}:`, err);
     ctx.reply('❌ Si è verificato un errore interno. Riprova più tardi.');
 });
+
+// Inizializza le statistiche all'avvio del bot
+loadStats();
 
 // Avvia il bot
 bot.launch().then(() => {
@@ -402,5 +604,11 @@ bot.launch().then(() => {
 });
 
 // Gestione della chiusura
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+process.once('SIGINT', () => {
+    saveStats(); // Salva le statistiche prima di chiudere
+    bot.stop('SIGINT');
+});
+process.once('SIGTERM', () => {
+    saveStats(); // Salva le statistiche prima di chiudere
+    bot.stop('SIGTERM');
+});
