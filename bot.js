@@ -185,7 +185,7 @@ bot.command('resetstats', async (ctx) => {
   const userId = ctx.from.id;
   
   // Lista di admin autorizzati (il tuo ID Telegram)
-  const admins = [5347720595]; // Sostituisci con il tuo ID Telegram
+  const admins = [77417420]; // Sostituisci con il tuo ID Telegram
   
   // Verifica se l'utente è un admin
   if (!admins.includes(userId)) {
